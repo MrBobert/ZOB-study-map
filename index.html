@@ -22,6 +22,7 @@
   --app: #ffb547;
   --mark: #ff5c7a;
   --good: #7ee0a8;
+  --warn: #ffc857;
   --bad: #ff7a7a;
   --f-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
   --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -108,8 +109,10 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 .row { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr) 34px; gap: 6px; align-items: center; }
 .row select { width: 100%; min-width: 0; padding: 8px 4px; font-size: 12px; }
 .row .x { width: 34px; height: 34px; padding: 0; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font: 600 15px/1 var(--f-mono); }
-.row.ok select { border-color: var(--good); }
-.row.no select { border-color: var(--bad); }
+.row select.ok { border-color: var(--good); color: var(--good); }
+.row select.amb { border-color: var(--warn); color: var(--warn); }
+.row select.no { border-color: var(--bad); color: var(--bad); }
+.row select:disabled { opacity: 1; }
 .seg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; }
 .seg span { font: 600 12px/1 var(--f-display); letter-spacing: .1em; text-transform: uppercase; margin-right: 4px; }
 .seg button { font: 500 12px/1 var(--f-mono); padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
@@ -301,7 +304,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     if (!joined.length) gs.filter(g => g.layer === 'outline').forEach(g => g.bands.forEach(([lo, hi]) => joined.push({ sid: g.sid, layer: g.layer, lo, hi })));
     return joined.sort((a, b) => a.lo - b.lo || a.hi - b.hi || a.sid.localeCompare(b.sid));
   }
-  const fmtAlt = v => v <= 0 ? 'SFC' : v >= D.unl ? 'UNL' : v >= 180 ? 'FL' + String(v).padStart(3, '0') : String(v).padStart(3, '0');
+  const fmtAlt = v => v <= 0 ? 'SFC' : v >= D.unl ? 'AOA' : v >= 180 ? 'FL' + String(v).padStart(3, '0') : String(v).padStart(3, '0');
   const showLayer = l => l === 'outline' ? st.nb : st.layers.has(l);
   const showFac = v => v.home || st.nb;
   // is this sector the focus, or part of the focused area?
@@ -311,7 +314,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     return f && f.members ? f.members.has(sid) : sid === st.focus;
   };
   const query = (lat, lon) => lookup(lat, lon, st.nb).filter(r => showLayer(r.layer));
-  const fmtBand = (lo, hi) => hi >= D.unl ? `${fmtAlt(lo)} & ABV` : `${fmtAlt(lo)}–${fmtAlt(hi)}`;
+  const fmtBand = (lo, hi) => hi >= D.unl ? `${fmtAlt(lo)} AOA` : `${fmtAlt(lo)}–${fmtAlt(hi)}`;
   const fmtLat = lat => `${lat >= 0 ? 'N' : 'S'}${Math.abs(lat).toFixed(3)}°`;
   const fmtLon = lon => `${lon >= 0 ? 'E' : 'W'}${Math.abs(lon).toFixed(3)}°`;
 
@@ -1027,11 +1030,23 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     const want = new Set(c.answer.map(key));
     const rowsHtml = c.rows.map((r, i) => {
       const k = key({ sid: r.sid, lo: +r.lo, hi: +r.hi });
-      const cls = c.checked && r.sid ? (want.has(k) ? 'ok' : 'no') : '';
+      // Grade each part: green = right; on a wrong row, amber = this part matches the closest
+      // correct band for that sector, red = this part is the mistake (or the sector isn't an owner).
+      let g = { sid: '', lo: '', hi: '' };
+      if (c.checked && r.sid) {
+        const cands = c.answer.filter(a => a.sid === r.sid);
+        if (!cands.length) g = { sid: 'no', lo: 'no', hi: 'no' };
+        else {
+          const best = cands.map(a => ({ a, n: (String(a.lo) === String(r.lo)) + (String(a.hi) === String(r.hi)) })).sort((x, y) => y.n - x.n)[0];
+          g = best.n === 2 ? { sid: 'ok', lo: 'ok', hi: 'ok' }
+            : { sid: 'amb', lo: String(best.a.lo) === String(r.lo) ? 'amb' : 'no', hi: String(best.a.hi) === String(r.hi) ? 'amb' : 'no' };
+        }
+      }
+      const cls = '';
       return `<div class="row ${cls}" data-i="${i}">
-        <select data-f="sid" id="ch-sid-${i}" aria-label="Sector ${i + 1}"${c.checked ? ' disabled' : ''}><option value="">Sector…</option>${sectorOpts(r.sid)}</select>
-        <select data-f="lo" id="ch-lo-${i}" aria-label="Floor ${i + 1}"${c.checked ? ' disabled' : ''}>${altOpts(r.lo)}</select>
-        <select data-f="hi" id="ch-hi-${i}" aria-label="Ceiling ${i + 1}"${c.checked ? ' disabled' : ''}>${altOpts(r.hi)}</select>
+         <select data-f="sid" class="${g.sid}" id="ch-sid-${i}" aria-label="Sector ${i + 1}"${c.checked ? ' disabled' : ''}><option value="">Sector…</option>${sectorOpts(r.sid)}</select>
+        <select data-f="lo" class="${g.lo}" id="ch-lo-${i}" aria-label="Floor ${i + 1}"${c.checked ? ' disabled' : ''}>${altOpts(r.lo)}</select>
+        <select data-f="hi" class="${g.hi}" id="ch-hi-${i}" aria-label="Ceiling ${i + 1}"${c.checked ? ' disabled' : ''}>${altOpts(r.hi)}</select>
         <button class="x" data-rm="${i}" aria-label="Remove row"${c.checked || c.rows.length === 1 ? ' disabled' : ''}>×</button>
       </div>`;
     }).join('');
