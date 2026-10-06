@@ -11,12 +11,14 @@ A study aid for Cleveland ARTCC (ZOB) airspace. Open `index.html` in any browser
 
 ## Options
 - **Borders:** shows state, province and US–Canada borders and the Great Lakes under the sectors, in the map and in 3D.
+- **Terrain** (3D): ground relief at true vertical scale with hillshading, for a feel of the ridges under the sectors. Coarse (about 5 nm grid); not for minimum altitudes.
 - **Numbers → Pick separately** (challenge): choose the sector by name and its number in a separate box, so you have to know the number.
 
 ## Data
 - **ZOB sectors, strata and TRACONs:** traced from the ZOB study maps dated July 9, 2026 (low, high, Low Controller and Area 7 maps).
 - **Neighboring sectors:** VATSIM data (VATGlasses, VATSpy). These are only approximate.
 - **Borders and lakes:** Natural Earth (public domain).
+- **Terrain:** NOAA ETOPO5 5-minute relief (public domain), via the PMEL Ferret datasets.
 
 For study use only. Not for operational use.
 
