@@ -9,9 +9,14 @@ A study aid for Cleveland ARTCC (ZOB) airspace. Open `index.html` in any browser
 - **Challenge:** the app drops a random point and you name every owner and stratum. With a sector or area focused, points land inside it or just outside its edges (10 or 25 nm). A slider sets how wide the answer choices are.
 - **3D:** a tilted view of a sector with everything stacked above and below it, and optionally the sectors beside it.
 
+## Options
+- **Borders:** shows state, province and US–Canada borders and the Great Lakes under the sectors, in the map and in 3D.
+- **Numbers → Pick separately** (challenge): choose the sector by name and its number in a separate box, so you have to know the number.
+
 ## Data
 - **ZOB sectors, strata and TRACONs:** traced from the ZOB study maps dated July 9, 2026 (low, high, Low Controller and Area 7 maps).
 - **Neighboring sectors:** VATSIM data (VATGlasses, VATSpy). These are only approximate.
+- **Borders and lakes:** Natural Earth (public domain).
 
 For study use only. Not for operational use.
 
