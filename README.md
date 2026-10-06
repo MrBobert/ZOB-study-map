@@ -4,9 +4,9 @@ A study aid for Cleveland ARTCC (ZOB) airspace. Open `index.html` in any browser
 
 ## What it does
 - **Map:** ZOB low, high (U/S/H) and approach control boundaries. Each layer can be toggled on its own, and neighboring ZNY, ZAU and Toronto sectors can be shown.
-- **Focus:** zoom in on any sector.
+- **Focus:** zoom in on any sector or a whole ZOB area (area = first digit of the sector number; 02–08 are area 8).
 - **Explore:** tap a point to see every sector and approach control that owns airspace there, with floors and ceilings.
-- **Challenge:** the app drops a random point and you name every owner and stratum. A slider sets how wide the answer choices are.
+- **Challenge:** the app drops a random point and you name every owner and stratum. With a sector or area focused, points land inside it or just outside its edges (10 or 25 nm). A slider sets how wide the answer choices are.
 - **3D:** a tilted view of a sector with everything stacked above and below it, and optionally the sectors beside it.
 
 ## Data

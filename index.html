@@ -110,6 +110,10 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 .row .x { width: 34px; height: 34px; padding: 0; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font: 600 15px/1 var(--f-mono); }
 .row.ok select { border-color: var(--good); }
 .row.no select { border-color: var(--bad); }
+.seg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; }
+.seg span { font: 600 12px/1 var(--f-display); letter-spacing: .1em; text-transform: uppercase; margin-right: 4px; }
+.seg button { font: 500 12px/1 var(--f-mono); padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
+.seg button[aria-pressed="true"] { color: var(--fg); background: var(--raise); border-color: #3a4a5e; }
 .slider { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 10px; margin-bottom: 12px; }
 .slider label { font: 600 12px/1 var(--f-display); letter-spacing: .1em; text-transform: uppercase; color: var(--fg); }
 .slider input { width: 100%; accent-color: var(--high); }
@@ -194,6 +198,19 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     };
     volumes.push(vol); sectors[i].volumes.push(vol);
   }));
+  // ZOB areas: the first digit of the sector number (02, 03, 04, 06, 07, 08 are area 8)
+  const areas = [];
+  sectors.filter(s => s.home && !s.approach && !s.outline && /^\d\d$/.test(s.short)).forEach(s => {
+    const n = s.short[0] === '0' ? 8 : +s.short[0];
+    let a = areas.find(x => x.n === n);
+    if (!a) { a = { n, id: 'AREA:' + n, members: new Set(), volumes: [], fac: 'ZOB', home: true, area: true }; areas.push(a); }
+    a.members.add(s.id); a.volumes.push(...s.volumes);
+  });
+  areas.sort((a, b) => a.n - b.n).forEach(a => {
+    const nums = [...a.members].map(id => byId[id].short).sort();
+    Object.assign(a, { name: 'Area ' + a.n, short: 'A' + a.n, display: `Area ${a.n} (${nums.join(' ')})` });
+    byId[a.id] = a;
+  });
   const homeVols = volumes.filter(v => v.home);
   const B = {
     minLat: Math.min(...homeVols.map(v => v.minLat)), maxLat: Math.max(...homeVols.map(v => v.maxLat)),
@@ -287,6 +304,12 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
   const fmtAlt = v => v <= 0 ? 'SFC' : v >= D.unl ? 'UNL' : v >= 180 ? 'FL' + String(v).padStart(3, '0') : String(v).padStart(3, '0');
   const showLayer = l => l === 'outline' ? st.nb : st.layers.has(l);
   const showFac = v => v.home || st.nb;
+  // is this sector the focus, or part of the focused area?
+  const inFocus = sid => {
+    if (!st.focus || !sid) return false;
+    const f = byId[st.focus];
+    return f && f.members ? f.members.has(sid) : sid === st.focus;
+  };
   const query = (lat, lon) => lookup(lat, lon, st.nb).filter(r => showLayer(r.layer));
   const fmtBand = (lo, hi) => hi >= D.unl ? `${fmtAlt(lo)} & ABV` : `${fmtAlt(lo)}–${fmtAlt(hi)}`;
   const fmtLat = lat => `${lat >= 0 ? 'N' : 'S'}${Math.abs(lat).toFixed(3)}°`;
@@ -297,8 +320,9 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     mode: 'explore', layers: new Set(['low', 'high', 'approach']), labels: true, apts: false, nb: true, view3d: false, adj: false,
     focus: '', marker: null, results: null,
     ch: null, // { lat, lon, answer, rows:[{sid,lo,hi}], checked }
-    score: { right: 0, total: 0 }, radiusIdx: 2,
+    score: { right: 0, total: 0 }, radiusIdx: 2, ringIdx: 1,
   };
+  try { const g = localStorage.getItem('zob-ring'); if (g !== null && +g >= 0 && +g <= 2) st.ringIdx = +g; } catch (e) {}
   try { const r = +localStorage.getItem('zob-radius'); if (localStorage.getItem('zob-radius') !== null && r >= 0 && r <= 5) st.radiusIdx = r; } catch (e) {}
   try { const sc = JSON.parse(localStorage.getItem('zob-score') || 'null'); if (sc) st.score = sc; } catch (e) {}
   const saveScore = () => { try { localStorage.setItem('zob-score', JSON.stringify(st.score)); } catch (e) {} };
@@ -377,16 +401,16 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     }
     const hl = highlightIds();
     const focusing = !!st.focus;
-    const vis = v => v.sid === st.focus || (showFac(v) && showLayer(v.layer));
+    const vis = v => inFocus(v.sid) || (showFac(v) && showLayer(v.layer));
     volumes.forEach(v => {
       if (!vis(v)) return;
-      if (v.sid === st.focus) { tracePath(v); ctx.fillStyle = COLORS[v.layer] + '38'; ctx.fill(); }
+      if (inFocus(v.sid)) { tracePath(v); ctx.fillStyle = COLORS[v.layer] + '38'; ctx.fill(); }
       else if (hl.has(v.sid)) { tracePath(v); ctx.fillStyle = COLORS[v.layer] + '2a'; ctx.fill(); }
     });
     // neighbours first and quieter, so ZOB's own lines read on top
     [false, true].forEach(home => ['outline', 'approach', 'low', 'high'].forEach(layer => volumes.forEach(v => {
       if (v.layer !== layer || v.home !== home || !vis(v)) return;
-      const isF = v.sid === st.focus;
+      const isF = inFocus(v.sid);
       tracePath(v);
       ctx.globalAlpha = isF ? 1 : (focusing ? 0.25 : (home ? 0.9 : 0.5)) * (hl.has(v.sid) ? 1.4 : 1);
       ctx.strokeStyle = COLORS[layer];
@@ -407,7 +431,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
       });
     }
     labelVols.forEach(v => {
-      const isF = v.sid === st.focus;
+      const isF = inFocus(v.sid);
       if (!vis(v)) return;
       if (!(st.labels || hl.has(v.sid) || isF)) return;
       const [x, y] = toScr(v.label[0], v.label[1]);
@@ -479,7 +503,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     const rel = new Map();
     volumes.forEach(v => {
       if (v.layer === 'outline') return;
-      if (v.sid === f.id) { items.push({ v, role: 'focus' }); return; }
+      if (inFocus(v.sid)) { items.push({ v, role: 'focus' }); return; }
       if (!showFac(v) || !st.layers.has(v.layer)) return;
       let best = null;
       for (const a of fv) {
@@ -717,7 +741,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     const sel = V3.sel && byId[V3.sel];
     panel.innerHTML = `<p class="eyebrow">3D · ${esc(sc.f.display)}</p>
       <p class="hint" style="margin-bottom:10px">Drag to rotate, pinch to zoom, two fingers to pan. Tap a block to name it; tap again to reach blocks behind it. Heights are stretched so the layers are easy to see.</p>
-      ${sel && V3.sel !== st.focus ? `<div class="actions" style="margin:0 0 10px"><button class="btn primary" id="v3-refocus">View ${esc(sel.short)} in 3D</button></div>` : ''}
+      ${sel && !inFocus(V3.sel) ? `<div class="actions" style="margin:0 0 10px"><button class="btn primary" id="v3-refocus">View ${esc(sel.short)} in 3D</button></div>` : ''}
       <ul class="stack">${focus.map(row).join('')}</ul>
       ${stack.length ? `<p class="eyebrow" style="margin-top:14px">Stacked above, below or inside</p><ul class="stack">${stack.map(row).join('')}</ul>` : ''}
       ${st.adj && beside.length ? `<p class="eyebrow" style="margin-top:14px">Beside it</p><ul class="stack">${beside.map(row).join('')}</ul>` : ''}
@@ -832,6 +856,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     const zob = sectors.filter(s => s.home);
     const nb = sectors.filter(s => !s.home);
     focusSel.innerHTML = `<option value="">All sectors</option>`
+      + grp('ZOB areas', areas)
       + grp('ZOB center', zob.filter(s => !s.approach))
       + grp('ZOB approach', zob.filter(s => s.approach).sort((a, b) => a.name.localeCompare(b.name)))
       + ['ZNY', 'ZAU', 'CZYZ'].map(f => grp(`${FAC_NAME[f]} (${f})`, nb.filter(s => s.fac === f))).join('')
@@ -881,18 +906,28 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
   // ---------- challenge ----------
   function newChallenge() {
     // With neighbors on, points can land up to ~40 nm outside ZOB so the seams get tested too.
-    const pad = st.nb && !st.focus ? 0.7 : 0;
-    const b0 = st.focus ? sectorBounds(byId[st.focus]) : B;
+    // With a focus, points land inside it, or (about 4 in 10) in the ring just outside it.
+    const F = st.focus && byId[st.focus];
+    const ring = F ? RINGS[st.ringIdx] : 0;
+    const fv = F ? F.volumes.filter(v => v.layer !== 'outline') : [];
+    const pad = F ? ring / 60 : (st.nb ? 0.7 : 0);
+    const b0 = F ? sectorBounds(F) : B;
     const b = { minLat: b0.minLat - pad, maxLat: b0.maxLat + pad, minLon: b0.minLon - pad / cos0, maxLon: b0.maxLon + pad / cos0 };
+    const outside = ring > 0 && Math.random() < 0.4;
     let pick = null;
-    for (let i = 0; i < 6000 && !pick; i++) {
+    for (let i = 0; i < 8000 && !pick; i++) {
       const lat = b.minLat + Math.random() * (b.maxLat - b.minLat);
       const lon = b.minLon + Math.random() * (b.maxLon - b.minLon);
+      if (F) {
+        const inF = fv.some(v => inside(v, lat, lon));
+        if (outside ? inF : !inF) continue;
+        if (outside && Math.min(...fv.map(v => distNm(v, lat, lon))) > ring) continue;
+      }
       const ans = query(lat, lon);
       if (!ans.length || ans.some(r => r.layer === 'outline')) continue;
-      if (!st.focus && !lookup(lat, lon, false).length && !nearHome(lat, lon)) continue;
-      if (st.focus && !ans.some(r => r.sid === st.focus)) continue;
-      pick = { lat, lon, answer: ans };
+      if (!F && !lookup(lat, lon, false).length && !nearHome(lat, lon)) continue;
+      if (F && !outside && !ans.some(r => inFocus(r.sid))) continue;
+      pick = { lat, lon, answer: ans, outside };
     }
     st.ch = pick ? { ...pick, rows: [{ sid: '', lo: '', hi: '' }], checked: false } : null;
     if (pick) ensureVisible(pick.lat, pick.lon);
@@ -906,6 +941,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
   }
   const key = r => `${r.sid}|${r.lo}|${r.hi}`;
   const RADII = [10, 25, 50, 100, 200, Infinity];
+  const RINGS = [0, 10, 25];
   // distance in nm from a point to a volume (0 inside), on a local flat projection
   function distNm(v, lat, lon) {
     if (inside(v, lat, lon)) return 0;
@@ -1006,7 +1042,11 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
         <ul class="stack">${c.answer.map(a => ownRow(a, got.has(key(a)) ? ' · <span class="tag good">got it</span>' : ' · <span class="tag bad">missed</span>')).join('')}</ul>`;
     }
     panel.innerHTML = `<p class="eyebrow">Challenge · <span class="coord">${fmtLat(c.lat)} ${fmtLon(c.lon)}</span></p>
-      <p class="hint" style="margin-bottom:10px">Name every ${[...st.layers].map(l => LAYER_NAME[l].toLowerCase()).join(' / ')} owner over the marker${st.focus ? ` (inside ${esc(byId[st.focus].display)})` : ''}, each with its floor and ceiling. A sector cut by an approach shelf gets one row per band.</p>
+      <p class="hint" style="margin-bottom:10px">Name every ${[...st.layers].map(l => LAYER_NAME[l].toLowerCase()).join(' / ')} owner over the marker${st.focus ? ` (${c.outside ? 'just outside' : 'inside'} ${esc(byId[st.focus].display)})` : ''}, each with its floor and ceiling. A sector cut by an approach shelf gets one row per band.</p>
+      ${st.focus ? `<div class="seg" role="group" aria-label="Where points land">
+        <span>Points</span>
+        ${RINGS.map((r, i) => `<button data-ring="${i}" aria-pressed="${st.ringIdx === i}">${r ? 'Inside + ' + r + ' nm' : 'Inside only'}</button>`).join('')}
+      </div>` : ''}
       <div class="slider">
         <label for="ch-radius">Choices</label>
         <input type="range" id="ch-radius" min="0" max="${RADII.length - 1}" step="1" value="${st.radiusIdx}" aria-describedby="ch-radius-val">
@@ -1023,6 +1063,11 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
       const i = +s.closest('.row').dataset.i; c.rows[i][s.dataset.f] = s.value;
     });
     panel.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { c.rows.splice(+b.dataset.rm, 1); renderPanel(); });
+    panel.querySelectorAll('[data-ring]').forEach(b => b.onclick = () => {
+      st.ringIdx = +b.dataset.ring;
+      try { localStorage.setItem('zob-ring', String(st.ringIdx)); } catch (e) {}
+      newChallenge();
+    });
     const rad = document.getElementById('ch-radius');
     if (rad) rad.oninput = () => {
       st.radiusIdx = +rad.value;
