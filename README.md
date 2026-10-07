@@ -10,7 +10,7 @@ A study aid for Cleveland ARTCC (ZOB) airspace. Open `index.html` in any browser
 - **3D:** a tilted view of a sector with everything stacked above and below it, and optionally the sectors beside it.
 
 ## Options
-- **Borders:** shows state, province and US–Canada borders and the Great Lakes under the sectors, in the map and in 3D.
+- **Map ▾ menu:** airports, VOR/VORTAC/TACAN, NDBs, and borders & lakes. Tap an airport or navaid in Explore to see its name and frequency and who owns the airspace over it.
 - **Terrain** (3D): ground relief at true vertical scale with hillshading, for a feel of the ridges under the sectors. Coarse (about 5 nm grid); not for minimum altitudes.
 - **Numbers → Pick separately** (challenge): choose the sector by name and its number in a separate box, so you have to know the number.
 
@@ -18,6 +18,7 @@ A study aid for Cleveland ARTCC (ZOB) airspace. Open `index.html` in any browser
 - **ZOB sectors, strata and TRACONs:** traced from the ZOB study maps dated July 9, 2026 (low, high, Low Controller and Area 7 maps).
 - **Neighboring sectors:** VATSIM data (VATGlasses, VATSpy). These are only approximate.
 - **Borders and lakes:** Natural Earth (public domain).
+- **Navaids:** OurAirports (public domain). Community-maintained, so a decommissioned NDB may still appear.
 - **Terrain:** NOAA ETOPO5 5-minute relief (public domain), via the PMEL Ferret datasets.
 
 For study use only. Not for operational use.
