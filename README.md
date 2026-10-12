@@ -7,7 +7,7 @@ A study aid for Cleveland ARTCC (ZOB) airspace. Open `index.html` in any browser
 - **Focus:** zoom in on any sector or a whole ZOB area (area = first digit of the sector number; 02–08 are area 8).
 - **Explore:** tap a point to see every sector and approach control that owns airspace there, with floors and ceilings.
 - **Challenge:** the app drops a random point and you name every owner and stratum. With a sector or area focused, points land inside it or just outside its edges (10 or 25 nm). A slider sets how wide the answer choices are.
-- **Traffic (Area 7):** an aircraft on a real FAA preferred/coded route through Area 7, with the ZOB/ZNY LOA requirements for its destination: required route or STAR, the altitude at the boundary, stacking against other flows, and the next sector. Study shows the answers; Quiz asks for them.
+- **Traffic (Area 7):** an aircraft on a real FAA preferred/coded route through Area 7, with the requirements for its destination: required route or STAR, the altitude at the boundary, stacking against other flows, and the next sector. Study shows the answers; Quiz asks for them.
 - **3D:** a tilted view of a sector with everything stacked above and below it, and optionally the sectors beside it.
 
 ## Options
@@ -19,7 +19,6 @@ A study aid for Cleveland ARTCC (ZOB) airspace. Open `index.html` in any browser
 - **ZOB sectors, strata and TRACONs:** traced from the ZOB study maps dated July 9, 2026 (low, high, Low Controller and Area 7 maps).
 - **Neighboring sectors:** VATSIM data (VATGlasses, VATSpy). These are only approximate.
 - **Borders and lakes:** Natural Earth (public domain).
-- **Traffic rules:** restated from the ZOB/ZNY letter of agreement (effective Nov 27 2025). The LOA itself is not included here.
 - **Routes and procedure geometry:** FAA coded/preferred routes and the FAA CIFP (public domain), via the vice ATC simulator's bundled copies.
 - **Navaids:** OurAirports (public domain). Community-maintained, so a decommissioned NDB may still appear.
 - **Terrain:** NOAA ETOPO5 5-minute relief (public domain), via the PMEL Ferret datasets.
