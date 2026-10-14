@@ -7,7 +7,7 @@ A study aid for Cleveland ARTCC (ZOB) airspace. Open `index.html` in any browser
 - **Focus:** zoom in on any sector or a whole ZOB area (area = first digit of the sector number; 02–08 are area 8).
 - **Explore:** tap a point to see every sector and approach control that owns airspace there, with floors and ceilings.
 - **Challenge:** the app drops a random point and you name every owner and stratum. With a sector or area focused, points land inside it or just outside its edges (10 or 25 nm). A slider sets how wide the answer choices are.
-- **Traffic (Area 7):** an aircraft on a real FAA preferred/coded route through Area 7, with the requirements for its destination: required route or STAR, the altitude at the boundary, stacking against other flows, and the next sector. Study shows the answers; Quiz asks for them.
+- **Traffic (Area 7):** an aircraft on a real FAA preferred/coded route through Area 7, with the requirements for its destination: required route or STAR, the altitude at the boundary, stacking against other flows, and the next sector. Covers New York Center flows and Youngstown Approach arrivals and departures. Study shows the answers; Quiz asks for them.
 - **3D:** a tilted view of a sector with everything stacked above and below it, and optionally the sectors beside it.
 
 ## Options
