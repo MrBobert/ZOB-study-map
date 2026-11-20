@@ -1716,6 +1716,8 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     let alt = parseInt(U.alt, 10);
     let raw = U.route.toUpperCase().replace(/\.+/g, ' ').split(/\s+/).filter(Boolean);
     raw = raw.map(t => { const m = t.match(/\/[NMK]\d{3,4}([FA])(\d{3})$/); if (m) { if (m[1] === 'F') alt = +m[2]; return t.replace(/\/.*$/, ''); } return t; }).filter(t => t && t !== 'DCT');
+    // "TRISH STAR" / "BUF SID" (as the LOA writes them) mean that fix's procedure: mark them TRISH* / BUF^
+    raw = raw.reduce((a, t) => { if (/^(STAR|SID|DP)$/.test(t) && a.length && !/[*^]$/.test(a[a.length - 1])) a[a.length - 1] += t === 'STAR' ? '*' : '^'; else a.push(t); return a; }, []);
     // departure point
     let start = null, dep = null;
     if (U.start === 'apt') {
@@ -1758,7 +1760,9 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
         continue;
       }
       // STAR into the destination, SID out of the departure
-      const star = !RDB.FX[t] && findProc(dest && dest.id, t, 'S');
+      const forced = /\*$/.test(t) ? 'S' : /\^$/.test(t) ? 'D' : null, tb = forced ? t.slice(0, -1) : t;
+      const shown = forced ? `${tb} ${forced === 'S' ? 'STAR' : 'SID'}` : t;
+      const star = (forced === 'S' || (!forced && !RDB.FX[t])) && findProc(dest && dest.id, tb, 'S');
       if (star) {
         const [name, P] = star, com = P.c ? P.c.split(' ') : [];
         let path = P.t[prevId] ? P.t[prevId].split(' ') : [];
@@ -1766,15 +1770,21 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
         else path = path.concat(com);
         if (!P.t[prevId] && !com.includes(prevId)) warn.push(`${prevId || 'The previous point'} isn't a transition of ${name}; drawn from its first common fix.`);
         path.forEach(f => push(f, fixPos(f, lastPt(), apts)));
-        toks.push({ t, ok: true, what: `STAR ${name}` });
+        toks.push({ t: shown, ok: true, what: `STAR ${name}` });
         continue;
       }
-      const sid = !RDB.FX[t] && findProc(dep && dep.id, t, 'D');
+      const sid = (forced === 'D' || (!forced && !RDB.FX[t])) && findProc(dep && dep.id, tb, 'D');
       if (sid) {
         const [name, P] = sid, com = P.c ? P.c.split(' ') : [];
         let path = com.concat(nxt && P.t[nxt] ? P.t[nxt].split(' ') : []);
         path.forEach(f => push(f, fixPos(f, lastPt(), apts)));
-        toks.push({ t, ok: true, what: `SID ${name}` });
+        toks.push({ t: shown, ok: true, what: `SID ${name}` });
+        continue;
+      }
+      if (forced) { // named a procedure the data doesn't have: fly to its fix
+        const ff = fixPos(tb, lastPt(), apts);
+        if (ff) { push(tb, ff); toks.push({ t: shown, ok: true, what: `to ${tb}` }); warn.push(`No ${shown} for ${(forced === 'S' ? dest : dep) ? (forced === 'S' ? dest : dep).id : 'this airport'} in the procedure data; drawn to ${tb}.`); }
+        else toks.push({ t: shown, ok: false, what: 'not found' });
         continue;
       }
       const ll2 = parseLatLon(t);
