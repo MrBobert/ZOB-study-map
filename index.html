@@ -1671,7 +1671,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     const AW = {}; Object.entries(raw.aw).forEach(([k, v]) => AW[k] = v.split(' '));
     return { FX, AP, AW, PR: raw.pr, TM: raw.tm };
   })();
-  Object.assign(st, { trUser: false, ur: { start: 'tap', dep: '', route: '', dest: '', alt: '280', tap: null, res: null } });
+  Object.assign(st, { trUser: false, ur: { start: 'tap', dep: '', route: '', dest: '', alt: '280', acft: 'jet', tap: null, res: null } });
   try { const o = JSON.parse(localStorage.getItem('zob-ur') || 'null'); if (o) Object.assign(st.ur, o, { res: null }); } catch (e) {}
   const saveUR = () => { try { const { res, ...keep } = st.ur; localStorage.setItem('zob-ur', JSON.stringify(keep)); } catch (e) {} };
   const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
@@ -1733,6 +1733,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
       const lastA = airportPos(raw[raw.length - 1]);
       if (lastA && (!RDB.FX[raw[raw.length - 1]] || /^[A-Z]{4}$/.test(raw[raw.length - 1]))) { if (!dest) dest = lastA; if (lastA.id === (dest && dest.id)) destTok = raw.pop(); }
     }
+    const rtoks = raw.slice();
     if (start) out.push(start);
     const lastPt = () => out.length ? [out[out.length - 1].lat, out[out.length - 1].lon] : null;
     const push = (id, p, kind) => { if (p && !(out.length && out[out.length - 1].id === id && id)) out.push({ id, lat: p.lat, lon: p.lon, kind: kind || p.kind }); };
@@ -1785,7 +1786,8 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
       const base = /^[A-Z]{3,5}\d$/.test(t) && t.slice(0, -1);
       const bf = base && fixPos(base, lastPt(), apts);
       if (bf) { push(base, bf); toks.push({ t, ok: true, what: `to ${base}` }); warn.push(`${t} isn't in the procedure data for ${dest ? dest.id : 'this airport'}; drawn direct to ${base}.`); continue; }
-      toks.push({ t, ok: false, what: base ? 'unknown procedure for this airport' : 'not found' });
+      const near = !base && Object.keys(RDB.FX).concat(Object.keys(RDB.AW)).filter(k => (k.startsWith(t) && k.length - t.length === 1) || (k.length === t.length && [...k].filter((c, i) => c !== t[i]).length === 1)).slice(0, 3);
+      toks.push({ t, ok: false, what: base ? 'unknown procedure for this airport' : near.length ? `not found; did you mean ${near.join(' or ')}?` : 'not found' });
     }
     if (dest) { push(dest.id, dest, 'A'); if (destTok) toks.push({ t: destTok, ok: true, what: 'destination' }); }
     // distance and the sectors along the way at the chosen altitude
@@ -1808,7 +1810,9 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     }
     secs.forEach((s, i) => s.to = i + 1 < secs.length ? secs[i + 1].from : dist);
     const hdg = out.length > 1 ? Math.atan2((out[1].lon - out[0].lon) * cos0, out[1].lat - out[0].lat) : 0;
-    U.res = { pts: out, toks, warn, dist, secs: secs.filter(s => s.to - s.from > 0.5 || secs.length === 1), alt, dep, dest, hdg, needStart: !start };
+    U.res = { pts: out, toks, warn, dist, secs: secs.filter(s => s.to - s.from > 0.5 || secs.length === 1), alt, dep, dest, hdg, needStart: !start, rtoks };
+    U.res.checks = routeChecks(U.res);
+    U.res.bad = U.res.checks.some(k => k.X && ((k.rt && k.rt.st === 'bad' && !(k.night && k.night.st === 'ok')) || k.altOk === false));
     saveUR();
   }
   function fitUserRoute() {
@@ -1827,7 +1831,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     const U = st.ur, r = U.res;
     ctx.save();
     if (r && r.pts.length > 1) {
-      ctx.lineWidth = 1.8; ctx.setLineDash([]); ctx.strokeStyle = 'rgba(126,224,168,.9)';
+      ctx.lineWidth = r.bad ? 2.4 : 1.8; ctx.setLineDash([]); ctx.strokeStyle = r.bad ? 'rgba(255,122,122,.95)' : 'rgba(126,224,168,.9)';
       ctx.beginPath(); r.pts.forEach((p, i) => { const [x, y] = toScr(p.lat, p.lon); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
       ctx.font = '500 10px "IBM Plex Mono", monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       r.pts.forEach((p, i) => {
@@ -1844,6 +1848,18 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
       r.secs.slice(1).forEach(s => {
         const [x, y] = toScr(s.lat, s.lon);
         ctx.strokeStyle = '#ffc857'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.stroke();
+      });
+      // boundary crossings that have an LOA/SOP rule, tagged with the required altitude
+      (r.checks || []).filter(k => k.X).forEach(k => {
+        const [x, y] = toScr(k.X.lat, k.X.lon);
+        const bad = (k.rt && k.rt.st === 'bad' && !(k.night && k.night.st === 'ok')) || k.altOk === false;
+        const c = bad ? '#ff7a7a' : '#7ee0a8';
+        ctx.strokeStyle = c; ctx.lineWidth = 2.2; ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.stroke();
+        const tag = (k.row.alt ? k.row.alt.replace(/^AOB /, '↓ ').replace(/ descending.*$/, '') : 'route') + (bad ? ' ✗' : ' ✓');
+        ctx.font = '700 11px "IBM Plex Mono", monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        const tw = ctx.measureText(tag).width;
+        ctx.fillStyle = 'rgba(10,14,19,.88)'; ctx.fillRect(x + 10, y - 9, tw + 8, 18);
+        ctx.fillStyle = c; ctx.fillText(tag, x + 14, y);
       });
     }
     const p0 = r && r.pts.length ? r.pts[0] : U.tap ? { lat: U.tap[0], lon: U.tap[1] } : null;
@@ -1889,6 +1905,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
           <div class="kv"><span>Route</span><b>${r.pts.map(p => esc(p.id || '•')).join(' ')}</b></div>
           <div class="kv"><span>Distance</span><b>${Math.round(r.dist)} NM</b></div>
         </div>
+        ${checkHTML(r.checks || [], r)}
         <p class="eyebrow" style="margin-top:14px">Sectors along the route at ${fmtAlt(r.alt)}</p>
         <ul class="stack">${secRows}</ul>` : ''}`;
     }
@@ -1897,11 +1914,13 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
       <textarea id="ur-route" class="search" rows="2" style="margin-top:10px;resize:vertical" placeholder="Route: navaids, fixes, airways, SID/STAR, e.g. ERI J59 JHW J70 LVZ LENDY8" autocomplete="off" spellcheck="false" autocapitalize="characters">${esc(U.route)}</textarea>
       <div class="trow" style="margin-top:8px"><input id="ur-dest" class="search" placeholder="Destination, e.g. KJFK" value="${esc(U.dest)}" autocomplete="off" spellcheck="false" autocapitalize="characters">
         <input id="ur-alt" class="search" style="max-width:96px" inputmode="numeric" placeholder="Alt 280" value="${esc(U.alt)}" aria-label="Altitude in hundreds of feet"></div>
-      <div class="actions"><button class="btn primary" id="ur-go">Show route</button><button class="btn" id="ur-clear">Clear</button></div>
+      <div class="seg" style="margin-top:10px"><span>Aircraft</span><button data-ura="jet" aria-pressed="${U.acft === 'jet'}">Jet</button><button data-ura="prop" aria-pressed="${U.acft === 'prop'}">Prop / non-jet</button></div>
+      <div class="actions" style="margin-top:0"><button class="btn primary" id="ur-go">Show route</button><button class="btn" id="ur-clear">Clear</button></div>
       ${res}`;
   }
   function bindUserRoute() {
     const U = st.ur, g = id => document.getElementById(id);
+    panel.querySelectorAll('[data-ura]').forEach(b => b.onclick = () => { U.acft = b.dataset.ura; if (U.res) solveRoute(); else saveUR(); renderPanel(); draw(); });
     panel.querySelectorAll('[data-urs]').forEach(b => b.onclick = () => { U.start = b.dataset.urs; if (U.res) solveRoute(); else saveUR(); renderPanel(); draw(); });
     [['ur-dep', 'dep'], ['ur-route', 'route'], ['ur-dest', 'dest'], ['ur-alt', 'alt']].forEach(([id, k]) => { const el = g(id); if (el) el.oninput = () => { U[k] = el.value; saveUR(); }; });
     const go = () => { solveRoute(); fitUserRoute(); renderPanel(); draw(); };
@@ -1909,6 +1928,198 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
     ['ur-dep', 'ur-dest', 'ur-alt'].forEach(id => { const el = g(id); if (el) el.onkeydown = e => { if (e.key === 'Enter') go(); }; });
     g('ur-route').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); } };
     g('ur-clear').onclick = () => { Object.assign(U, { dep: '', route: '', dest: '', tap: null, res: null }); saveUR(); renderPanel(); draw(); };
+  }
+
+  // ---------- route checks against the ZNY LOA and the Area 7 procedures ----------
+  // ZNY sector names used by the LOA, mapped onto the study map's (VATSIM) ZNY sectors; GEE/BFD are ZOB's.
+  const LSECT = { BGM: 'ZNY:50', ELM: 'ZNY:34', MDT: 'ZNY:10', SWISS: 'ZNY:93', PSB: 'ZNY:73', SEG: 'ZNY:72', MIP: 'ZNY:75', GEE: 'ZOB:37', BFD: 'ZOB:73' };
+  const PIT_AREA = ['KPIT', 'KAGC', 'KBTP', 'KBVI', 'KFWQ', 'KHLG', 'KPJC', 'KAFJ'];
+  const STACK = 'KIAD and KIAD sats must be below KPHL and KPHL sats, and both must be below KDCA and KDCA sats.';
+  const Rw = (route, alt, when = {}, acft = 'all', note = '', night = null) => ({ route, alt, when, acft, note, night });
+  const K = s => s.split(' ').map(x => /^[A-Z]{4}$/.test(x) || /^[A-Z0-9]{3}$/.test(x) && /\d/.test(x) ? x : 'K' + x);
+  const ZNY_LOA = [
+    { dests: K('ACY'), rows: [Rw('HAR DQO ENO SIE', 'AOB FL250', {}, 'jet', 'KACY arrivals must be above KPHL and KPHL sat arrivals that are not in trail.'), Rw('HAR DQO ENO SIE', 'AOB 17,000', {}, 'prop')] },
+    { dests: K('ABE'), rows: [Rw('ETG', 'AOB FL250', { via: ['MIP'] }, 'jet'), Rw('HAR T299 DUMMR', 'AOB FL250', { via: ['MDT'] }, 'jet')] },
+    { dests: K('ALB'), rows: [Rw(null, 'AOB FL290', { north: 'J584' }), Rw(null, 'AOB FL250', { south: 'J584' }, 'jet', 'Must enter ZNY north of the MDT sector.')] },
+    { dests: K('AVP'), rows: [Rw(null, 'AOB FL230', { north: 'J584' }, 'all', 'ZNY has control for turns direct LACIE.'), Rw(null, 'AOB FL250', { south: 'J584' }, 'jet', 'Must enter ZNY north of the MDT sector.')] },
+    { dests: K('BDR HVN OXC'), rows: [Rw('RAHKS DENNA*', 'AOB FL330 descending to FL290 or below', { north: 'J190' }, 'jet'), Rw('RAHKS DENNA*', 'AOB FL350', { via: ['MIP'] }, 'jet'), Rw('RAHKS DENNA*', 'AOB FL390', { via: ['PSB', 'SEG'] }, 'jet')] },
+    { dests: K('BGM'), rows: [Rw(null, 'AOB 17,000', { north: 'Q476' }), Rw(null, 'AOB FL230', { south: 'Q476' })] },
+    { dests: K('ITH ELM'), rows: [Rw(null, 'AOB 17,000 descending to 9,000', { north: 'Q476' }), Rw(null, 'AOB FL230', { south: 'Q476' })] },
+    { dests: K('BWI'), rows: [Rw('IZZEE TRISH*', 'AOB FL250', {}, 'jet', 'KBWI must be below competing KEWR and KEWR sats.')] },
+    { dests: K('HYA ACK MVY PVC'), rows: [Rw('LFV | ENE V167 LFV', '', {}, 'all', 'May 15–Sept 30: ENE V167 LFV. All other times: LFV direct.')] },
+    { dests: K('DCA'), rows: [Rw('PSB SKILS*', 'AOB FL250', {}, 'jet', STACK)] },
+    { dests: K('2W5 ADW CGS DAA NDY VKX W00'), rows: [Rw('PSB SHILO V93 BAL', 'AOB FL250', {}, 'jet', STACK)] },
+    { dests: K('EWR'), rows: [Rw('SLT FQM*', 'AOB FL330', {}, 'jet', '', ['SWEET', '0000–0430L']), Rw('FQM PENNS*', 'AOB FL250', {}, 'prop', '', ['SWEET', '0000–0430L'])] },
+    { dests: K('12N 1N7 39N 4N1 CDW FWN LDJ MMU SMQ TEB N05 N07 N51'), rows: [Rw('PSB MAGIO LVZ LVZ*', 'AOB FL350', { depEast: 1 }, 'jet', '', ['BWZ', '0000–0530L']), Rw('Q476 MAGIO LVZ LVZ*', 'AOB FL350', {}, 'jet', '', ['BWZ', '0000–0530L']), Rw('Q476 MAGIO LVZ LVZ* | PENNS STW', 'AOB FL270', {}, 'prop', 'South of SLT or not eligible for the LVZ STAR: PENNS STW, AOB FL230.', ['BWZ', '0000–0530L'])] },
+    { dests: K('HPN'), rows: [Rw('DANZI VALRE*', 'AOB FL290', {}, 'jet'), Rw('DANZI NOBBI*', 'AOB FL290', {}, 'prop', 'Non-jets at 250 KIAS or less; faster non-jets take DANZI VALRE STAR.')] },
+    { dests: K('IAD 0W3 2W6 CJR EZF FRR HEF HWY JYO MRB NYG OKV RMN'), rows: [Rw('PSB PRIVO* | PSB WAYNZ*', 'AOB FL300', { north: 'GEE' }, 'jet', STACK), Rw('PSB PRIVO* | PSB WAYNZ*', 'AOB FL250', {}, 'jet', STACK), Rw('SEG PRTZL* | SEG SEG*', 'AOB 17,000', {}, 'prop')] },
+    { dests: K('IPT'), rows: [Rw(null, 'AOB 17,000', { via: ['SWISS'] })] },
+    { dests: K('ISP 1N2 21N FOK JPX HTO HWV MTP'), rows: [Rw('ARRKK NELIE* | Q476 NWTON PUCKY*', '', {}, 'all', '1400–2100L: ARRKK NELIE STAR. All other times: Q476 NWTON PUCKY STAR.')] },
+    { dests: K('JFK FRG'), rows: [Rw('PSB MAGIO WLKES PUCKY*', '', { depEast: 1 }, 'jet', '', ['WLKES PUCKY*', '0000–0430L']), Rw('HOXIE Q476 WLKES PUCKY*', '', {}, 'jet', '', ['WLKES PUCKY*', '0000–0430L']), Rw('HOXIE Q476 WLKES PUCKY* | PSB V6 FJC ARD V276 ZIGGI', '', {}, 'prop', 'Props not eligible for the PUCKY STAR: PSB V6 FJC ARD V276 ZIGGI, AOB 17,000.')] },
+    { dests: K('LGA'), rows: [Rw('ETG MIP* | PSB MIP* | MIP MIP*', 'AOB FL290', { depPIT: 1 }, 'jet'), Rw('ETG MIP* | PSB MIP* | MIP MIP*', 'AOB FL330', {}, 'jet')] },
+    { dests: K('MDT CXY LNS SEG THV ZER N68 N71 N79 N94'), rows: [Rw(null, 'AOB 17,000', { via: ['SWISS'] }), Rw(null, 'AOB 17,000 descending to 11,000', { via: ['MDT'] })] },
+    { dests: K('PHL'), rows: [Rw('HAR BUNTS* | HAR BOJID*', 'AOB FL250', { via: ['MDT'] }, 'jet', STACK), Rw('PSB BUNTS* | PSB BOJID*', 'AOB FL250', { via: ['PSB', 'SWISS'] }, 'jet', STACK), Rw('HAR BUNTS* | HAR LRP V210 BUNTS | PSB BUNTS*', 'AOB 17,000', {}, 'prop')] },
+    { dests: K('ILG MQS PNE TTN'), rows: [Rw('HAR BUNTS* | HAR V210 BUNTS', 'AOB FL250', { via: ['MDT'] }, 'jet', STACK), Rw('PSB BUNTS* | HAR LRP V210 BUNTS', 'AOB FL250', { via: ['PSB', 'SWISS'] }, 'jet', STACK), Rw('HAR BUNTS* | HAR LRP V210 BUNTS | PSB BUNTS*', 'AOB 17,000', {}, 'prop')] },
+    { dests: K('17N 3NJ6 CKZ DYL EVY LOM OQN PTW UKT N47 N57 NJ74'), rows: [Rw('HAR LRP V210 BUNTS', 'AOB FL250', {}, 'jet', STACK), Rw('HAR LRP V210 BUNTS', 'AOB 17,000', {}, 'prop')] },
+    { dests: K('RDG'), rows: [Rw('RAV', 'AOB FL250', { via: ['MIP'] }, 'jet'), Rw('RAV', 'AOB FL190', { via: ['PSB'] }), Rw('HAR BOYER', 'AOB FL190', { via: ['MDT'] }, 'jet'), Rw('HAR BOYER', 'AOB 17,000', { via: ['MDT'] }, 'prop')] },
+    { dests: K('SWF MGJ MSV POU'), rows: [Rw('ARRKK DANZI T634 FILPS', 'AOB FL230', { north: 'BGM' }, 'all', '', ['RAGER', '0000–0530L, SWF sats']), Rw('ARRKK DANZI T634 FILPS', 'AOB FL290', {}, 'all', '', ['RAGER', '0000–0530L, SWF sats'])] },
+    { dests: K('WRI'), rows: [Rw('HAR HAR*', 'AOB FL250')] },
+  ].map(r => ({ ...r, fac: 'ZNY', dir: 'out', title: 'ZOB → ZNY' }));
+  const ZNY_IN = [
+    { dests: K('PIT'), rows: [Rw('SLT HAYNZ*', 'AOB FL260', { north: 'BFD' }), Rw('VINSE DEMME | GRACE HAYNZ*', 'AOB FL220')] },
+    { dests: K('BUF'), rows: [Rw('BENEE', 'AOB FL260', { north: 'ELM' }), Rw(null, 'AOB FL260')] },
+    { dests: K('CLE'), rows: [Rw('PSB UPPRR TRYBE*', 'AOB FL340')] },
+    { dests: ['CYYZ'], rows: [Rw('WOZEE LINNG*', 'AOB FL340', { north: 'DLMAR' }, 'jet'), Rw('WOZEE LINNG*', 'AOB FL360', {}, 'jet')] },
+  ].map(r => ({ ...r, fac: 'ZNY', dir: 'in', title: 'ZNY → ZOB' }));
+  // Area 7 procedures already in Traffic, turned into the same shape
+  function sopRoute(txt) {
+    if (!txt || /^(As filed|None|Correct route|No further|ADR)/i.test(txt)) return null;
+    const alts = txt.replace(/\bor\b|,/g, '|').split('|').map(s => s.trim()).filter(Boolean)
+      .map(s => s.replace(/^(Via|Remain over) /i, '~').replace(/ direct$/i, '').replace(/^K[A-Z]{3} /, '').replace(/ (STAR)\b/g, '*').replace(/ K[A-Z]{3}$/, ''));
+    return alts.join(' | ');
+  }
+  const AREA_LOA = TR.flows.filter(f => isArea(f.fac)).map(f => {
+    const dests = f.dests || (f.dest ? [f.dest] : (f.label || '').match(/\b[KC][A-Z]{3}\b/g) || []);
+    const r0 = Rw(sopRoute(f.route), f.alt === 'None' ? '' : f.alt, {}, f.acft === 'Jets' ? 'jet' : 'all', f.note || '');
+    const rows = f.rule === 'ewr' ? [{ ...r0, route: 'WOMBT PIGGZ SLT', when: { depPIT: 1 } }, r0]
+      : f.rule === 'eastTDT' ? [{ ...r0, when: { eastOf: 'TDT' } }]
+      : f.rule === 'fromBFD' ? [{ ...r0, when: { fromSec: 'ZOB:73' } }]
+      : f.rule === 'bufA5'
+      ? [Rw('DKK', 'AOB FL270 descending to FL240', { between: ['TEESY', 'MIGET'], westOf: 'ESL' }), Rw('BENEE', 'AOB FL270 descending to FL240', { between: ['TEESY', 'MIGET'] }), Rw('DKK', 'AOB FL280', { westOf: 'ESL' }), Rw('BENEE', 'AOB FL280')]
+      : [r0];
+    return { dests, orig: f.orig, fac: f.fac, dir: f.dir, rows, title: f.dir === 'out' ? `Area 7 → Area ${f.fac[1]}` : `Area ${f.fac[1]} → Area 7`, cond: f.cond };
+  });
+  const ALL_CHECKS = ZNY_LOA.concat(ZNY_IN, AREA_LOA);
+
+  function southLat(sid, lon) {
+    let best = Infinity;
+    (byId[sid] ? byId[sid].volumes : []).forEach(v => {
+      if (v.layer === 'outline') return;
+      const L = Math.max(v.minLon + 1e-6, Math.min(v.maxLon - 1e-6, lon));
+      for (let i = 0, j = v.lats.length - 1; i < v.lats.length; j = i++) {
+        if ((v.lons[i] > L) !== (v.lons[j] > L)) best = Math.min(best, v.lats[i] + (L - v.lons[i]) * (v.lats[j] - v.lats[i]) / (v.lons[j] - v.lons[i]));
+      }
+    });
+    return best;
+  }
+  function awyLat(awy, lon) {
+    const pts = (RDB.AW[awy] || []).map(f => fixPos(f)).filter(Boolean);
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i];
+      if ((a.lon <= lon && lon <= b.lon) || (b.lon <= lon && lon <= a.lon)) return a.lat + (lon - a.lon) * (b.lat - a.lat) / ((b.lon - a.lon) || 1e-9);
+    }
+    if (!pts.length) return null;
+    const e = pts.reduce((m, p) => Math.abs(p.lon - lon) < Math.abs(m.lon - lon) ? p : m);
+    return e.lat;
+  }
+  function lineLat(name, lon) { // southern boundary of a sector, an airway, or a fix's latitude
+    if (LSECT[name]) return southLat(LSECT[name], lon);
+    if (RDB.AW[name]) return awyLat(name, lon);
+    const f = fixPos(name); return f ? f.lat : null;
+  }
+  const lineName = n => LSECT[n] ? `${n} sector’s southern boundary` : n;
+  function evalWhen(w, X) {
+    const out = [];
+    if (w.north) { const L = lineLat(w.north, X.lon); out.push([L != null && X.lat > L, `Enters north of ${lineName(w.north)}`, `Enters on or south of ${lineName(w.north)}`]); }
+    if (w.south) { const L = lineLat(w.south, X.lon); out.push([L != null && X.lat <= L, `Enters on or south of ${lineName(w.south)}`, `Enters north of ${lineName(w.south)}`]); }
+    if (w.via) { const ok = w.via.some(n => LSECT[n] === X.via); out.push([ok, `Enters ZNY in the ${w.via.join('/')} sector`, `Enters ZNY in ${X.via && byId[X.via] ? byId[X.via].display : 'another sector'}, not ${w.via.join('/')}`]); }
+    if (w.depPIT) out.push([!!X.dep && PIT_AREA.includes(X.dep.id), 'Departed KPIT or a PIT satellite', 'Not a PIT-area departure']);
+    if (w.depEast) out.push([!!X.dep && X.dep.lon >= -80.24, 'Departed KPIT or east of KPIT', 'Departed west of KPIT']);
+    if (w.between) { const [a, b] = w.between.map(n => fixPos(n)); const ok = a && b && X.lon >= Math.min(a.lon, b.lon) && X.lon <= Math.max(a.lon, b.lon); out.push([ok, `Enters between ${w.between.join(' and ')}`, `Enters outside ${w.between.join('–')}`]); }
+    if (w.eastOf) { const f = fixPos(w.eastOf); out.push([!!f && X.lon > f.lon, `East of ${w.eastOf}`, `West of ${w.eastOf}`]); }
+    if (w.fromSec) out.push([X.from === w.fromSec, `Coming from ${byId[w.fromSec].display}`, `Not coming from ${byId[w.fromSec].display}`]);
+    if (w.westOf) { const f = fixPos(w.westOf); out.push([!!f && X.lon < f.lon, `West of ${w.westOf}`, `East of ${w.westOf}`]); }
+    return { ok: out.every(o => o[0]), why: out.map(o => o[0] ? o[1] : o[2]) };
+  }
+  const isStarTok = t => t.endsWith('*') || (/^[A-Z]{3,5}\d$/.test(t) && !RDB.FX[t]);
+  function normToks(list) {
+    const a = list.map(t => isStarTok(t) ? t.replace(/\d?\*?$/, '') + '*' : t);
+    return a.filter((t, i) => !(a[i + 1] && a[i + 1] === t + '*'));
+  }
+  function matchRoute(pat, user, anywhere) {
+    const alts = pat.split('|').map(s => normToks(s.trim().split(/\s+/)));
+    const u = normToks(user);
+    let best = { st: 'bad' };
+    for (const p of alts) {
+      if (p[0] && p[0][0] === '~') { const x = p[0].slice(1); if (u.includes(x) || u.includes(x + '*')) return { st: 'ok', alt: [x] }; continue; }
+      const tail = u.slice(-p.length);
+      if (tail.length === p.length && tail.every((t, i) => t === p[i])) return { st: 'ok', alt: p };
+      for (let i = 0; i + p.length <= u.length; i++) if (p.every((t, k) => u[i + k] === t)) { if (anywhere) return { st: 'ok', alt: p }; best = { st: 'warn', alt: p, after: u.slice(i + p.length) }; }
+    }
+    return best;
+  }
+  function maxAlt(txt) {
+    if (!txt) return null;
+    const m = txt.match(/(?:AOB|to|^)\s*(FL)?\s*(\d{1,3}(?:,\d{3})?)/i);
+    if (!m) return null;
+    if (m[1]) return +m[2];
+    return m[2].includes(',') ? +m[2].replace(',', '') / 100 : +m[2];
+  }
+  const areaOf = sid => { const s = byId[sid]; if (!s || !s.home || s.approach || !/^\d\d$/.test(s.short)) return null; return s.short[0] === '0' ? 8 : +s.short[0]; };
+  function routeChecks(res) {
+    const U = st.ur, out = [];
+    if (!res || res.pts.length < 2) return out;
+    const destId = res.dest && res.dest.id, depId = res.dep && res.dep.id;
+    const user = (res.rtoks || []).slice();
+    ALL_CHECKS.forEach(C => {
+      const forDest = destId && C.dests.includes(destId), forDep = C.orig && depId === C.orig;
+      if (!forDest && !forDep) return;
+      // where the route crosses the boundary this rule is about
+      const inFac = s => s && s.sid && (C.fac === 'ZNY' ? byId[s.sid] && byId[s.sid].fac === 'ZNY' : areaOf(s.sid) === +C.fac[1]);
+      const inOurs = s => s && s.sid && (C.fac === 'ZNY' ? byId[s.sid] && byId[s.sid].home : areaOf(s.sid) === 7);
+      let X = null;
+      for (let i = 1; i < res.secs.length; i++) {
+        const a = res.secs[i - 1], b = res.secs[i];
+        if (C.dir === 'out' ? inOurs(a) && inFac(b) : inFac(a) && inOurs(b)) { X = { lat: b.lat, lon: b.lon, via: b.sid, from: a.sid, at: b.from, dep: res.dep }; break; }
+      }
+      if (!X) { if (C.fac === 'ZNY' && C.dir === 'out' && forDest) out.push({ C, X: null }); return; }
+      const rows = C.rows.filter(r => r.acft === 'all' || r.acft === U.acft);
+      if (!rows.length) return;
+      let row = null, why = [];
+      const skipped = [];
+      for (const r of rows) { const e = evalWhen(r.when, X); if (e.ok) { row = r; why = e.why; break; } skipped.push(...e.why.filter((w, i) => !evalWhen(r.when, X).ok)); }
+      if (row && !why.length && skipped.length) why = [...new Set(skipped.filter(s => /^(Enters on or south|Enters north|Enters outside|East of|West of|Not |Departed west|Enters ZNY in )/.test(s)))];
+      let unmet = false;
+      if (!row) { row = rows[rows.length - 1]; why = evalWhen(row.when, X).why; unmet = true; }
+      const rt = row.route ? matchRoute(row.route, user, C.fac !== 'ZNY' || C.dir !== 'out') : null;
+      const night = row.night && rt && rt.st !== 'ok' ? matchRoute(row.night[0], user) : null;
+      const amax = maxAlt(row.alt);
+      const altOk = amax == null ? null : res.alt <= amax;
+      out.push({ C, X, row, why, unmet, rt, night, amax, altOk });
+    });
+    // the Area 7 binder predates some LOA changes: where it disagrees with a passing ZNY LOA route, caution rather than fail
+    out.forEach(k => {
+      if (k.X && isArea(k.C.fac) && k.rt && k.rt.st === 'bad' && out.some(z => z.C.fac === 'ZNY' && z.rt && z.rt.st === 'ok')) { k.rt.st = 'warn'; k.rt.conflict = true; }
+    });
+    return out;
+  }
+  function checkHTML(list, res) {
+    if (!list.length) return '';
+    const mark = s => s === 'ok' ? '<b style="color:var(--good)">✓</b>' : s === 'warn' ? '<b style="color:var(--warn)">!</b>' : s === 'bad' ? '<b style="color:var(--bad)">✗</b>' : '';
+    const row = (k, v) => `<div class="kv"><span>${k}</span><b>${v}</b></div>`;
+    return `<p class="eyebrow" style="margin-top:14px">LOA / SOP checks</p>` + list.map(k => {
+      const C = k.C;
+      if (!k.X) return `<div class="tcard">${row(esc(C.title), esc(k.C.dests.includes(res.dest && res.dest.id) ? res.dest.id : ''))}<p class="hint" style="margin:0;color:var(--warn)">The route doesn’t cross into ZNY at ${fmtAlt(res.alt)}, so the boundary rule can’t be checked.</p></div>`;
+      const into = byId[k.X.via] ? byId[k.X.via].display : '';
+      const r = k.row;
+      let rtLine = '—';
+      if (k.rt) {
+        if (k.rt.st === 'ok') rtLine = `${mark('ok')} ${esc(k.rt.alt.join(' ').replace(/\*/g, ' STAR'))}${r.route.includes('|') ? `<br><i>Allowed: ${esc(r.route.replace(/\*/g, ' STAR').replace(/~/g, 'via ').replace(/ \| /g, ' or '))}</i>` : ''}`;
+        else if (k.night && k.night.st === 'ok') rtLine = `${mark('warn')} ${esc(k.row.night[0].replace(/\*/g, ' STAR'))} is only for ${esc(k.row.night[1])}. Otherwise: ${esc(r.route.replace(/\*/g, ' STAR'))}`;
+        else if (k.rt.conflict) rtLine = `${mark('warn')} Binder says ${esc(r.route.replace(/\*/g, ' STAR').replace(/ \| /g, ' or '))}; the route follows the newer ZNY LOA instead.`;
+        else if (k.rt.st === 'warn') rtLine = `${mark('warn')} Has ${esc(k.rt.alt.join(' ').replace(/\*/g, ' STAR'))} but continues ${esc(k.rt.after.join(' '))}. Should end ${esc(r.route.replace(/\*/g, ' STAR'))}`;
+        else rtLine = `${mark('bad')} ${r.route.startsWith('~') ? 'Must go via' : 'Must end'} ${esc(r.route.replace(/\*/g, ' STAR').replace(/~/g, '').replace(/ \| /g, ' or '))}`;
+      } else rtLine = 'As filed';
+      const altLine = k.amax == null ? (r.alt ? esc(r.alt) : 'None') : `${mark(k.altOk ? 'ok' : 'bad')} ${esc(r.alt)} · filed ${fmtAlt(res.alt)}`;
+      return `<div class="tcard" style="${(k.rt && k.rt.st === 'bad' && !(k.night && k.night.st === 'ok')) || k.altOk === false ? 'border-color:var(--bad)' : ''}">
+        ${row(esc(C.title), `${esc((res.dest && C.dests.includes(res.dest.id)) ? res.dest.id : C.orig || '')}${r.acft !== 'all' ? ` · ${r.acft === 'jet' ? 'jets' : 'props'}` : ''}`)}
+        ${row('Crosses', `${esc(into)} · ${Math.round(k.X.at)} NM, ${esc(describePoint([k.X.lat, k.X.lon]))}`)}
+        ${row('Applies because', (k.why.length ? k.why.map(esc).join('<br>') : 'Applies to all entries') + (k.unmet ? '<br><i>No row matches this entry exactly; showing the closest.</i>' : ''))}
+        ${row('Route', rtLine)}
+        ${row('Altitude at boundary', altLine)}
+        ${r.note ? row('Notes', esc(r.note)) : ''}
+      </div>`;
+    }).join('') + `<p class="hint" style="font-size:12px;margin-top:6px">The altitude you enter is checked as the altitude at the boundary. ZNY sector lines (BGM, MIP, PSB…) are approximate.</p>`;
   }
 
   // ---------- challenge ----------
